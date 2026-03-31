@@ -28,7 +28,7 @@ export class MainlayerError extends Error {
   }
 }
 
-const DEFAULT_BASE_URL = "https://api.mainlayer.xyz";
+const DEFAULT_BASE_URL = "https://api.mainlayer.fr";
 const DEFAULT_TIMEOUT = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
 

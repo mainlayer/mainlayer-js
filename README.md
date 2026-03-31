@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org/)
 
-Official TypeScript/JavaScript SDK for [Mainlayer](https://mainlayer.xyz) — payment infrastructure for AI agents and developers.
+Official TypeScript/JavaScript SDK for [Mainlayer](https://mainlayer.fr) — payment infrastructure for AI agents and developers.
 
 Mainlayer lets you create accounts, publish paid resources, accept payments, and manage subscriptions programmatically. Think of it as Stripe, purpose-built for AI agents.
 

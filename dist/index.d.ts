@@ -6,7 +6,7 @@ interface MainlayerConfig {
     apiKey?: string;
     /** JWT bearer token (alternative to apiKey) */
     token?: string;
-    /** Override the base URL (default: https://api.mainlayer.xyz) */
+    /** Override the base URL (default: https://api.mainlayer.fr) */
     baseUrl?: string;
     /** Request timeout in milliseconds (default: 30000) */
     timeout?: number;

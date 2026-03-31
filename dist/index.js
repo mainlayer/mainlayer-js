@@ -8,7 +8,7 @@ var MainlayerError = class extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 };
-var DEFAULT_BASE_URL = "https://api.mainlayer.xyz";
+var DEFAULT_BASE_URL = "https://api.mainlayer.fr";
 var DEFAULT_TIMEOUT = 3e4;
 var DEFAULT_MAX_RETRIES = 3;
 var RETRYABLE_STATUSES = /* @__PURE__ */ new Set([408, 429, 500, 502, 503, 504]);

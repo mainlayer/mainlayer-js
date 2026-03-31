@@ -537,28 +537,28 @@ describe("base URL", () => {
     await client.resources.list();
 
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toContain("api.mainlayer.xyz");
+    expect(url).toContain("api.mainlayer.fr");
   });
 
   it("respects custom base URL", async () => {
     const fetchMock = mockFetch(200, []);
     const client = new Mainlayer({
       apiKey: "ml_key",
-      baseUrl: "https://sandbox.mainlayer.xyz",
+      baseUrl: "https://sandbox.mainlayer.fr",
       fetch: fetchMock,
     });
 
     await client.resources.list();
 
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toContain("sandbox.mainlayer.xyz");
+    expect(url).toContain("sandbox.mainlayer.fr");
   });
 
   it("strips trailing slash from custom base URL", async () => {
     const fetchMock = mockFetch(200, []);
     const client = new Mainlayer({
       apiKey: "ml_key",
-      baseUrl: "https://sandbox.mainlayer.xyz/",
+      baseUrl: "https://sandbox.mainlayer.fr/",
       fetch: fetchMock,
     });
 

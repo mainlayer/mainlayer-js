@@ -41,7 +41,7 @@ async function handleRequest(resourceId: string, callerWallet: string, document:
 
   if (!has_access) {
     console.log(`Access denied for wallet ${callerWallet}.`);
-    console.log(`Prompt them to pay at: https://mainlayer.xyz/pay/${resourceId}`);
+    console.log(`Prompt them to pay at: https://mainlayer.fr/pay/${resourceId}`);
     return { error: "payment_required", resource_id: resourceId };
   }
 
