@@ -1,0 +1,56 @@
+{
+  "name": "@mainlayer/sdk",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for Mainlayer — payment infrastructure for AI agents",
+  "keywords": [
+    "mainlayer",
+    "payments",
+    "ai-agents",
+    "sdk",
+    "typescript"
+  ],
+  "homepage": "https://github.com/mainlayer/mainlayer-js#readme",
+  "bugs": {
+    "url": "https://github.com/mainlayer/mainlayer-js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mainlayer/mainlayer-js.git"
+  },
+  "license": "MIT",
+  "author": "Mainlayer",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
