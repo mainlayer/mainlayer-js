@@ -51,6 +51,22 @@ console.log(`Revenue: $${stats.total_revenue_usdc}`);
 
 ---
 
+## Examples
+
+| File | Description |
+|------|-------------|
+| [`examples/vendor-onboarding.ts`](examples/vendor-onboarding.ts) | Full account registration, wallet onboarding, and first resource setup |
+| [`examples/subscription-flow.ts`](examples/subscription-flow.ts) | Create a subscription resource with tiered pricing plans |
+| [`examples/create-resource.ts`](examples/create-resource.ts) | Create a pay-per-call resource with webhooks and a coupon |
+| [`examples/agent-quickstart.ts`](examples/agent-quickstart.ts) | Minimal agent integration — check access before serving |
+
+```bash
+# Run any example (requires ts-node or tsx)
+ML_API_KEY=ml_... npx tsx examples/subscription-flow.ts
+```
+
+---
+
 ## Authentication
 
 You can authenticate with an **API key** or a **JWT token** (obtained via `auth.login`):
@@ -94,9 +110,15 @@ await unauthClient.auth.login({ email: 'you@example.com', password: 'secret' });
 | `resources.list()` | List your resources |
 | `resources.create(params)` | Create a resource |
 | `resources.get(id)` | Get a resource by ID |
-| `resources.update(id, params)` | Partially update a resource |
-| `resources.delete(id)` | Delete a resource |
+| `resources.update(id, params)` | Full update a resource |
+| `resources.delete(id)` | Deactivate a resource |
+| `resources.activate(id)` | Make a resource live and accepting payments |
 | `resources.getPublic(id)` | Get public info (no auth required) |
+| `resources.getPaymentRequired(id)` | Get payment-required payload |
+| `resources.setQuota(id, params)` | Set per-wallet purchase/call limits |
+| `resources.getQuota(id)` | Get current quota configuration |
+| `resources.deleteQuota(id)` | Remove all quota limits |
+| `resources.getWebhookSecret(id)` | Get webhook signing secret |
 
 **Resource params:**
 ```typescript
@@ -105,11 +127,14 @@ await unauthClient.auth.login({ email: 'you@example.com', password: 'secret' });
   type: 'api' | 'file' | 'endpoint' | 'page';
   price_usdc: number;        // Price per unit
   fee_model: 'one_time' | 'subscription' | 'pay_per_call';
+  vendor_wallet?: string;    // Wallet address to receive payments
   description?: string;
   callback_url?: string;     // Called after successful payment
   credits_per_payment?: number;
   duration_seconds?: number;
   quota_calls?: number;
+  overage_price_usdc?: number;
+  metadata?: Record<string, unknown>;
   discoverable?: boolean;    // Show in public marketplace
 }
 ```
@@ -140,27 +165,30 @@ await unauthClient.auth.login({ email: 'you@example.com', password: 'secret' });
 |--------|-------------|
 | `plans.list(resourceId)` | List pricing plans for a resource |
 | `plans.create(resourceId, params)` | Create a pricing plan |
+| `plans.update(resourceId, planName, params)` | Update a plan by name |
+| `plans.delete(resourceId, planName)` | Delete a plan by name |
 
 ### `client.subscriptions`
 
 | Method | Description |
 |--------|-------------|
 | `subscriptions.list()` | List subscriptions |
-| `subscriptions.create(params)` | Create a subscription |
-| `subscriptions.cancel(id)` | Cancel a subscription |
+| `subscriptions.approve(params)` | Approve a subscription with signed authorization |
+| `subscriptions.cancel(params)` | Cancel a subscription with signed message |
+
+### `client.vendor`
+
+| Method | Description |
+|--------|-------------|
+| `vendor.register(params)` | Complete vendor registration with a wallet signature |
+| `vendor.get()` | Get vendor profile |
+| `vendor.update(params)` | Update vendor profile |
 
 ### `client.analytics`
 
 | Method | Description |
 |--------|-------------|
 | `analytics.get({ start_date?, end_date?, resource_id? })` | Get revenue and usage analytics |
-
-### `client.vendor`
-
-| Method | Description |
-|--------|-------------|
-| `vendor.get()` | Get vendor profile |
-| `vendor.update(params)` | Update vendor profile |
 
 ### `client.webhooks`
 

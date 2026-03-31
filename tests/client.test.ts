@@ -140,7 +140,7 @@ describe("resources", () => {
     expect(body.fee_model).toBe("pay_per_call");
   });
 
-  it("update sends PATCH /resources/:id", async () => {
+  it("update sends PUT /resources/:id", async () => {
     const fetchMock = mockFetch(200, { id: "r1", price_usdc: 0.5 });
     const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
 
@@ -148,7 +148,7 @@ describe("resources", () => {
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("/resources/r1");
-    expect(init.method).toBe("PATCH");
+    expect(init.method).toBe("PUT");
   });
 
   it("delete sends DELETE /resources/:id", async () => {
@@ -486,15 +486,55 @@ describe("request headers", () => {
 // ─── Subscriptions ────────────────────────────────────────────────────────────
 
 describe("subscriptions", () => {
-  it("cancel sends DELETE /subscriptions/:id", async () => {
+  it("approve sends POST /subscriptions/approve", async () => {
+    const sub = { id: "sub_1", resource_id: "r1", payer_wallet: "0xABC", status: "active" };
+    const fetchMock = mockFetch(200, sub);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    const result = await client.subscriptions.approve({
+      resource_id: "r1",
+      payer_wallet: "0xABC",
+      max_renewals: 12,
+      chain: "solana",
+      signed_approval: "0xSIG",
+      delegate_token_account: "acc_1",
+      signed_at: "2024-01-01T00:00:00Z",
+    });
+
+    expect(result.id).toBe("sub_1");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/subscriptions/approve");
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string);
+    expect(body.resource_id).toBe("r1");
+    expect(body.max_renewals).toBe(12);
+  });
+
+  it("cancel sends POST /subscriptions/cancel", async () => {
     const fetchMock = mockFetch(200, {});
     const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
 
-    await client.subscriptions.cancel("sub_1");
+    await client.subscriptions.cancel({
+      resource_id: "r1",
+      payer_wallet: "0xABC",
+      signed_message: "0xSIG",
+    });
 
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain("/subscriptions/sub_1");
-    expect(init.method).toBe("DELETE");
+    expect(url).toContain("/subscriptions/cancel");
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string);
+    expect(body.payer_wallet).toBe("0xABC");
+  });
+
+  it("list sends GET /subscriptions", async () => {
+    const fetchMock = mockFetch(200, []);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    await client.subscriptions.list();
+
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("/subscriptions");
   });
 });
 
@@ -511,6 +551,35 @@ describe("vendor", () => {
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toContain("/vendor");
   });
+
+  it("register sends POST /vendors/register", async () => {
+    const regResult = { vendor_id: "v_1", api_key: "ml_abc123", next_step: "verify" };
+    const fetchMock = mockFetch(200, regResult);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    const result = await client.vendor.register({
+      wallet_address: "0xWallet",
+      nonce: "abc-nonce",
+      signed_message: "0xSig",
+    });
+
+    expect(result.vendor_id).toBe("v_1");
+    expect(result.api_key).toBe("ml_abc123");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/vendors/register");
+    expect(init.method).toBe("POST");
+  });
+
+  it("update sends PATCH /vendor", async () => {
+    const fetchMock = mockFetch(200, { id: "v1", name: "Updated Corp" });
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    await client.vendor.update({ name: "Updated Corp" });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/vendor");
+    expect(init.method).toBe("PATCH");
+  });
 });
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
@@ -524,6 +593,207 @@ describe("invoices", () => {
 
     const [url] = fetchMock.mock.calls[0] as [string];
     expect(url).toContain("/invoices");
+  });
+});
+
+// ─── Resource quota ───────────────────────────────────────────────────────────
+
+describe("resource quota", () => {
+  it("setQuota sends PUT /resources/:id/quota", async () => {
+    const quota = { resource_id: "r1", max_purchases_per_wallet: 3 };
+    const fetchMock = mockFetch(200, quota);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    const result = await client.resources.setQuota("r1", {
+      max_purchases_per_wallet: 3,
+      max_calls_per_day_per_wallet: 100,
+    });
+
+    expect(result.resource_id).toBe("r1");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/resources/r1/quota");
+    expect(init.method).toBe("PUT");
+  });
+
+  it("getQuota sends GET /resources/:id/quota", async () => {
+    const fetchMock = mockFetch(200, { resource_id: "r1", max_purchases_per_wallet: 5 });
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    const result = await client.resources.getQuota("r1");
+
+    expect(result.resource_id).toBe("r1");
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("/resources/r1/quota");
+  });
+
+  it("deleteQuota sends DELETE /resources/:id/quota", async () => {
+    const fetchMock = mockFetch(200, {});
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    await client.resources.deleteQuota("r1");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/resources/r1/quota");
+    expect(init.method).toBe("DELETE");
+  });
+});
+
+// ─── Resource activation ──────────────────────────────────────────────────────
+
+describe("resource activation", () => {
+  it("activate sends PATCH /resources/:id/activate", async () => {
+    const result = { id: "r1", active: true, discoverable: false };
+    const fetchMock = mockFetch(200, result);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    const activation = await client.resources.activate("r1");
+
+    expect(activation.active).toBe(true);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/resources/r1/activate");
+    expect(init.method).toBe("PATCH");
+  });
+});
+
+// ─── Webhook secret ───────────────────────────────────────────────────────────
+
+describe("resource webhook secret", () => {
+  it("getWebhookSecret sends GET /resources/:id/webhook-secret", async () => {
+    const fetchMock = mockFetch(200, { webhook_secret: "whsec_abc123" });
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    const result = await client.resources.getWebhookSecret("r1");
+
+    expect(result.webhook_secret).toBe("whsec_abc123");
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("/resources/r1/webhook-secret");
+  });
+});
+
+// ─── Plans update / delete ────────────────────────────────────────────────────
+
+describe("plans update and delete", () => {
+  it("update sends PUT /resources/:id/plans/:name", async () => {
+    const plan = { name: "monthly", price_usdc: 12.99 };
+    const fetchMock = mockFetch(200, plan);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    const result = await client.plans.update("r1", "monthly", { price_usdc: 12.99 });
+
+    expect(result.price_usdc).toBe(12.99);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/resources/r1/plans/monthly");
+    expect(init.method).toBe("PUT");
+  });
+
+  it("delete sends DELETE /resources/:id/plans/:name", async () => {
+    const fetchMock = mockFetch(200, {});
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    await client.plans.delete("r1", "monthly");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/resources/r1/plans/monthly");
+    expect(init.method).toBe("DELETE");
+  });
+});
+
+// ─── Resource update (PUT) ────────────────────────────────────────────────────
+
+describe("resource full update", () => {
+  it("update sends PUT /resources/:id", async () => {
+    const fetchMock = mockFetch(200, { id: "r1", price_usdc: 0.5 });
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    await client.resources.update("r1", {
+      slug: "my-api",
+      type: "api",
+      price_usdc: 0.5,
+      fee_model: "pay_per_call",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/resources/r1");
+    expect(init.method).toBe("PUT");
+  });
+});
+
+// ─── Payment required ─────────────────────────────────────────────────────────
+
+describe("payment required", () => {
+  it("getPaymentRequired sends GET /payment-required/:id", async () => {
+    const payload = { resource_id: "r1", amount: 0.1 };
+    const fetchMock = mockFetch(200, payload);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    await client.resources.getPaymentRequired("r1");
+
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toContain("/payment-required/r1");
+  });
+});
+
+// ─── Error handling — extended ────────────────────────────────────────────────
+
+describe("MainlayerError extended", () => {
+  it("throws with status 402 on payment required", async () => {
+    const fetchMock = mockFetch(402, { detail: "Payment required" });
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock, maxRetries: 0 });
+
+    await expect(client.resources.get("r1")).rejects.toMatchObject({
+      name: "MainlayerError",
+      status: 402,
+    });
+  });
+
+  it("throws with status 429 on rate limit (and retries)", async () => {
+    const fetchMock = mockFetchSequence([
+      { status: 429, body: { detail: "Too many requests" } },
+      { status: 429, body: { detail: "Too many requests" } },
+      { status: 200, body: [] },
+    ]);
+    const client = new Mainlayer({
+      apiKey: "ml_key",
+      fetch: fetchMock as unknown as typeof fetch,
+      maxRetries: 2,
+    });
+
+    const result = await client.resources.list();
+    expect(result).toHaveLength(0);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws with message from top-level error field", async () => {
+    const fetchMock = mockFetch(400, { error: "invalid_slug" });
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock, maxRetries: 0 });
+
+    await expect(client.resources.list()).rejects.toMatchObject({
+      status: 400,
+      message: "invalid_slug",
+    });
+  });
+
+  it("throws with message from message field", async () => {
+    const fetchMock = mockFetch(403, { message: "Forbidden" });
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock, maxRetries: 0 });
+
+    await expect(client.resources.list()).rejects.toMatchObject({
+      status: 403,
+      message: "Forbidden",
+    });
+  });
+
+  it("exposes raw body on the error", async () => {
+    const body = { detail: "Not found", code: "RESOURCE_NOT_FOUND" };
+    const fetchMock = mockFetch(404, body);
+    const client = new Mainlayer({ apiKey: "ml_key", fetch: fetchMock });
+
+    try {
+      await client.resources.get("bad_id");
+    } catch (err) {
+      expect(err).toBeInstanceOf(MainlayerError);
+      expect((err as MainlayerError).body).toMatchObject({ code: "RESOURCE_NOT_FOUND" });
+    }
   });
 });
 

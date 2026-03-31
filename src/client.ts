@@ -33,7 +33,7 @@ const DEFAULT_TIMEOUT = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
 
 /** HTTP methods supported by the client */
-type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 /** Set of HTTP status codes that should trigger a retry */
 const RETRYABLE_STATUSES = new Set([408, 429, 500, 502, 503, 504]);
@@ -195,6 +195,11 @@ export class HttpClient {
   /** Convenience POST */
   post<T>(path: string, body?: unknown): Promise<T> {
     return this.request<T>("POST", path, { body });
+  }
+
+  /** Convenience PUT */
+  put<T>(path: string, body?: unknown): Promise<T> {
+    return this.request<T>("PUT", path, { body });
   }
 
   /** Convenience PATCH */

@@ -16,6 +16,11 @@ import type { MainlayerConfig } from "./types/index.js";
 
 export { MainlayerError } from "./client.js";
 export type * from "./types/index.js";
+// Re-export resource classes for advanced usage
+export type { ResourcesResource } from "./resources/resources.js";
+export type { PlansResource } from "./resources/plans.js";
+export type { SubscriptionsResource } from "./resources/subscriptions.js";
+export type { VendorResource } from "./resources/vendor.js";
 
 /**
  * The official Mainlayer SDK client.

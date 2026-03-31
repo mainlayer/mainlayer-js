@@ -6,7 +6,7 @@ interface MainlayerConfig {
     apiKey?: string;
     /** JWT bearer token (alternative to apiKey) */
     token?: string;
-    /** Override the base URL (default: https://api.mainlayer.xyz) */
+    /** Override the base URL (default: https://api.mainlayer.fr) */
     baseUrl?: string;
     /** Request timeout in milliseconds (default: 30000) */
     timeout?: number;
@@ -47,6 +47,19 @@ interface AuthToken {
     access_token: string;
     token_type: string;
 }
+interface VendorRegisterParams {
+    /** On-chain wallet address */
+    wallet_address: string;
+    /** Nonce used in the signed message */
+    nonce: string;
+    /** Signature of the registration message */
+    signed_message: string;
+}
+interface VendorRegisterResult {
+    vendor_id: string;
+    api_key: string;
+    next_step?: string;
+}
 interface CreateApiKeyParams {
     name: string;
 }
@@ -73,6 +86,8 @@ interface CreateResourceParams {
     price_usdc: number;
     fee_model: FeeModel;
     description?: string;
+    /** Vendor wallet address to receive payments */
+    vendor_wallet?: string;
     /** Webhook URL called after a successful payment */
     callback_url?: string;
     /** Number of credits granted per payment */
@@ -81,6 +96,10 @@ interface CreateResourceParams {
     duration_seconds?: number;
     /** API call quota granted per payment */
     quota_calls?: number;
+    /** Price per additional call when quota is exceeded */
+    overage_price_usdc?: number;
+    /** Arbitrary metadata attached to the resource */
+    metadata?: Record<string, unknown>;
     /** Whether this resource appears in public discovery */
     discoverable?: boolean;
 }
@@ -96,10 +115,45 @@ interface Resource {
     credits_per_payment?: number;
     duration_seconds?: number;
     quota_calls?: number;
+    overage_price_usdc?: number;
+    vendor_wallet?: string;
+    metadata?: Record<string, unknown>;
     discoverable: boolean;
+    active: boolean;
     vendor_id: string;
     created_at: string;
     updated_at: string;
+}
+/** Returned by PATCH /resources/{id}/activate */
+interface ResourceActivateResult {
+    id: string;
+    active: boolean;
+    discoverable: boolean;
+    next_step?: string;
+}
+/** Public resource info (no auth required) */
+interface ResourcePublicInfo {
+    id: string;
+    slug: string;
+    description?: string;
+    price_usdc: number;
+    fee_model: FeeModel;
+    credits_per_payment?: number;
+    facilitator_url?: string;
+}
+interface ResourceQuotaParams {
+    /** Maximum total purchases allowed per wallet address */
+    max_purchases_per_wallet?: number;
+    /** Maximum API calls allowed per day per wallet address */
+    max_calls_per_day_per_wallet?: number;
+}
+interface ResourceQuota {
+    resource_id: string;
+    max_purchases_per_wallet?: number;
+    max_calls_per_day_per_wallet?: number;
+}
+interface ResourceWebhookSecret {
+    webhook_secret: string;
 }
 interface DiscoverParams extends PaginationParams {
     q?: string;
@@ -158,33 +212,57 @@ interface CreatePlanParams {
     name: string;
     /** Price in USD */
     price_usdc: number;
-    duration_seconds: number;
-    active?: boolean;
+    fee_model: FeeModel;
+    /** Number of credits granted per billing cycle */
+    credits_per_payment?: number;
+    /** Duration of each billing cycle in seconds */
+    duration_seconds?: number;
+    /** Maximum API calls allowed per day on this plan */
+    max_calls_per_day?: number;
 }
+type UpdatePlanParams = Partial<CreatePlanParams>;
 interface Plan {
-    id: string;
-    resource_id: string;
     name: string;
+    resource_id: string;
     price_usdc: number;
-    duration_seconds: number;
+    fee_model: FeeModel;
+    credits_per_payment?: number;
+    duration_seconds?: number;
+    max_calls_per_day?: number;
     active: boolean;
     created_at: string;
 }
-interface CreateSubscriptionParams {
+interface ApproveSubscriptionParams {
     resource_id: string;
     payer_wallet: string;
-    plan_id?: string;
+    max_renewals: number;
+    chain: string;
+    signed_approval: string;
+    delegate_token_account: string;
+    signed_at: string;
+    plan?: string;
+    trial_days?: number;
+}
+interface CancelSubscriptionParams {
+    resource_id: string;
+    payer_wallet: string;
+    signed_message: string;
 }
 interface Subscription {
     id: string;
     resource_id: string;
     payer_wallet: string;
-    plan_id?: string;
+    plan?: string;
     status: string;
+    chain: string;
     current_period_start: string;
     current_period_end: string;
+    max_renewals: number;
+    renewals_count: number;
     created_at: string;
 }
+/** @deprecated Use ApproveSubscriptionParams */
+type CreateSubscriptionParams = ApproveSubscriptionParams;
 interface AnalyticsParams {
     start_date?: string;
     end_date?: string;
@@ -283,7 +361,7 @@ declare class MainlayerError extends Error {
     constructor(message: string, status: number, body?: unknown);
 }
 /** HTTP methods supported by the client */
-type HttpMethod = "GET" | "POST" | "PATCH" | "DELETE";
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 /**
  * Core HTTP client for the Mainlayer API.
  * Handles authentication, retries, and error parsing.
@@ -311,6 +389,8 @@ declare class HttpClient {
     get<T>(path: string, query?: Record<string, string | number | boolean | undefined | null>): Promise<T>;
     /** Convenience POST */
     post<T>(path: string, body?: unknown): Promise<T>;
+    /** Convenience PUT */
+    put<T>(path: string, body?: unknown): Promise<T>;
     /** Convenience PATCH */
     patch<T>(path: string, body?: unknown): Promise<T>;
     /** Convenience DELETE */
@@ -432,7 +512,7 @@ declare class ResourcesResource {
      */
     get(id: string): Promise<Resource>;
     /**
-     * Update a resource (partial update).
+     * Update a resource (full update — all fields replaced).
      *
      * @param id - Resource ID
      * @param params - Fields to update
@@ -440,30 +520,103 @@ declare class ResourcesResource {
      *
      * @example
      * const updated = await client.resources.update('res_abc123', {
+     *   slug: 'my-api',
+     *   type: 'api',
      *   price_usdc: 0.25,
-     *   description: 'Updated description',
+     *   fee_model: 'pay_per_call',
      * });
      */
     update(id: string, params: UpdateResourceParams): Promise<Resource>;
     /**
-     * Delete a resource by ID.
+     * Delete (deactivate) a resource by ID.
      *
      * @param id - Resource ID
+     * @returns Confirmation message
      *
      * @example
      * await client.resources.delete('res_abc123');
      */
-    delete(id: string): Promise<void>;
+    delete(id: string): Promise<{
+        message: string;
+    }>;
+    /**
+     * Activate a resource, making it available to accept payments.
+     *
+     * @param id - Resource ID
+     * @returns Activation result with status and optional next steps
+     *
+     * @example
+     * const result = await client.resources.activate('res_abc123');
+     * if (result.next_step) {
+     *   console.log('Next step:', result.next_step);
+     * }
+     */
+    activate(id: string): Promise<ResourceActivateResult>;
     /**
      * Get public information about a resource (no authentication required).
      *
      * @param id - Resource ID
-     * @returns Public resource info
+     * @returns Public resource info including pricing
      *
      * @example
      * const info = await client.resources.getPublic('res_abc123');
      */
     getPublic(id: string): Promise<PublicResource>;
+    /**
+     * Get the payment-required payload for a resource.
+     * Used for initiating the payment flow.
+     *
+     * @param id - Resource ID
+     * @returns Payment required payload
+     *
+     * @example
+     * const payload = await client.resources.getPaymentRequired('res_abc123');
+     */
+    getPaymentRequired(id: string): Promise<unknown>;
+    /**
+     * Set purchase and call quotas for a resource.
+     *
+     * @param id - Resource ID
+     * @param params - Quota limits per wallet
+     * @returns The updated quota configuration
+     *
+     * @example
+     * await client.resources.setQuota('res_abc123', {
+     *   max_purchases_per_wallet: 3,
+     *   max_calls_per_day_per_wallet: 100,
+     * });
+     */
+    setQuota(id: string, params: ResourceQuotaParams): Promise<ResourceQuota>;
+    /**
+     * Get the current quota configuration for a resource.
+     *
+     * @param id - Resource ID
+     * @returns Current quota configuration
+     *
+     * @example
+     * const quota = await client.resources.getQuota('res_abc123');
+     */
+    getQuota(id: string): Promise<ResourceQuota>;
+    /**
+     * Remove all quota limits from a resource.
+     *
+     * @param id - Resource ID
+     *
+     * @example
+     * await client.resources.deleteQuota('res_abc123');
+     */
+    deleteQuota(id: string): Promise<void>;
+    /**
+     * Get the webhook signing secret for a resource.
+     * Use this to verify incoming webhook payloads.
+     *
+     * @param id - Resource ID
+     * @returns The webhook secret
+     *
+     * @example
+     * const { webhook_secret } = await client.resources.getWebhookSecret('res_abc123');
+     */
+    getWebhookSecret(id: string): Promise<ResourceWebhookSecret>;
 }
 
 /**
@@ -589,23 +742,48 @@ declare class PlansResource {
      *
      * @example
      * const plan = await client.plans.create('res_abc123', {
-     *   name: 'Monthly',
+     *   name: 'monthly',
      *   price_usdc: 9.99,
+     *   fee_model: 'subscription',
      *   duration_seconds: 2592000, // 30 days
-     *   active: true,
      * });
      */
     create(resourceId: string, params: CreatePlanParams): Promise<Plan>;
+    /**
+     * Update an existing plan by name.
+     *
+     * @param resourceId - The resource ID
+     * @param planName - The plan name identifier
+     * @param params - Fields to update
+     * @returns The updated plan
+     *
+     * @example
+     * await client.plans.update('res_abc123', 'monthly', { price_usdc: 12.99 });
+     */
+    update(resourceId: string, planName: string, params: UpdatePlanParams): Promise<Plan>;
+    /**
+     * Delete a plan by name.
+     *
+     * @param resourceId - The resource ID
+     * @param planName - The plan name identifier
+     *
+     * @example
+     * await client.plans.delete('res_abc123', 'monthly');
+     */
+    delete(resourceId: string, planName: string): Promise<void>;
 }
 
 /**
  * Subscriptions resource — manage recurring access to resources.
+ *
+ * Subscriptions are initiated by a payer's signed approval and can be
+ * cancelled by the payer with a signed message.
  */
 declare class SubscriptionsResource {
     private readonly http;
     constructor(http: HttpClient);
     /**
-     * List all active and past subscriptions.
+     * List all active and past subscriptions for the authenticated vendor.
      *
      * @returns Array of subscription records
      *
@@ -614,28 +792,37 @@ declare class SubscriptionsResource {
      */
     list(): Promise<Subscription[]>;
     /**
-     * Create a subscription approval for a resource.
+     * Approve and activate a subscription using the payer's signed authorization.
      *
-     * @param params - Subscription details
+     * @param params - Subscription approval details including signed authorization
      * @returns The created subscription record
      *
      * @example
-     * const sub = await client.subscriptions.create({
+     * const sub = await client.subscriptions.approve({
      *   resource_id: 'res_abc123',
      *   payer_wallet: '0xPayerWalletAddress',
-     *   plan_id: 'plan_monthly',
+     *   max_renewals: 12,
+     *   chain: 'solana',
+     *   signed_approval: '<signature>',
+     *   delegate_token_account: '<account>',
+     *   signed_at: new Date().toISOString(),
+     *   plan: 'monthly',
      * });
      */
-    create(params: CreateSubscriptionParams): Promise<Subscription>;
+    approve(params: ApproveSubscriptionParams): Promise<Subscription>;
     /**
-     * Cancel a subscription by ID.
+     * Cancel an active subscription using the payer's signed cancellation message.
      *
-     * @param id - Subscription ID
+     * @param params - Cancellation details including payer wallet and signed message
      *
      * @example
-     * await client.subscriptions.cancel('sub_abc123');
+     * await client.subscriptions.cancel({
+     *   resource_id: 'res_abc123',
+     *   payer_wallet: '0xPayerWalletAddress',
+     *   signed_message: '<signature>',
+     * });
      */
-    cancel(id: string): Promise<void>;
+    cancel(params: CancelSubscriptionParams): Promise<void>;
 }
 
 /**
@@ -669,11 +856,27 @@ declare class AnalyticsResource {
 }
 
 /**
- * Vendor resource — view and update your vendor profile.
+ * Vendor resource — register, view, and update your vendor profile.
  */
 declare class VendorResource {
     private readonly http;
     constructor(http: HttpClient);
+    /**
+     * Register a new vendor with a signed wallet message.
+     * Use this after `auth.register` to complete onboarding and receive an API key.
+     *
+     * @param params - Wallet address, nonce, and signed message
+     * @returns Vendor ID, API key, and optional next onboarding step
+     *
+     * @example
+     * const result = await client.vendor.register({
+     *   wallet_address: '0xYourWalletAddress',
+     *   nonce: 'random-nonce-string',
+     *   signed_message: '0xSignedMessage',
+     * });
+     * console.log('API Key:', result.api_key);
+     */
+    register(params: VendorRegisterParams): Promise<VendorRegisterResult>;
     /**
      * Get the authenticated vendor's profile.
      *
@@ -849,4 +1052,4 @@ declare class Mainlayer {
     constructor(config?: MainlayerConfig);
 }
 
-export { type AnalyticsParams, type AnalyticsResult, type ApiKey, type ApiKeyListItem, type AuthToken, type Coupon, type CreateApiKeyParams, type CreateCouponParams, type CreatePaymentParams, type CreatePlanParams, type CreateResourceParams, type CreateSubscriptionParams, type CreateWebhookParams, type DiscountType, type DiscoverParams, type Entitlement, type EntitlementCheckParams, type EntitlementCheckResult, type EntitlementsListParams, type FeeModel, type Invoice, type LoginParams, Mainlayer, type MainlayerConfig, MainlayerError, type MainlayerErrorResponse, type PaginatedResponse, type PaginationParams, type Payment, type Plan, type PublicResource, type RegisterParams, type Resource, type ResourceAnalytics, type ResourceType, type Subscription, type UpdateResourceParams, type UpdateVendorParams, type Vendor, type Webhook, type WebhookEvent, Mainlayer as default };
+export { type AnalyticsParams, type AnalyticsResult, type ApiKey, type ApiKeyListItem, type ApproveSubscriptionParams, type AuthToken, type CancelSubscriptionParams, type Coupon, type CreateApiKeyParams, type CreateCouponParams, type CreatePaymentParams, type CreatePlanParams, type CreateResourceParams, type CreateSubscriptionParams, type CreateWebhookParams, type DiscountType, type DiscoverParams, type Entitlement, type EntitlementCheckParams, type EntitlementCheckResult, type EntitlementsListParams, type FeeModel, type Invoice, type LoginParams, Mainlayer, type MainlayerConfig, MainlayerError, type MainlayerErrorResponse, type PaginatedResponse, type PaginationParams, type Payment, type Plan, PlansResource, type PublicResource, type RegisterParams, type Resource, type ResourceActivateResult, type ResourceAnalytics, type ResourcePublicInfo, type ResourceQuota, type ResourceQuotaParams, type ResourceType, type ResourceWebhookSecret, ResourcesResource, type Subscription, SubscriptionsResource, type UpdatePlanParams, type UpdateResourceParams, type UpdateVendorParams, type Vendor, type VendorRegisterParams, type VendorRegisterResult, VendorResource, type Webhook, type WebhookEvent, Mainlayer as default };

@@ -12,7 +12,7 @@ var MainlayerError = class extends Error {
     Object.setPrototypeOf(this, new.target.prototype);
   }
 };
-var DEFAULT_BASE_URL = "https://api.mainlayer.xyz";
+var DEFAULT_BASE_URL = "https://api.mainlayer.fr";
 var DEFAULT_TIMEOUT = 3e4;
 var DEFAULT_MAX_RETRIES = 3;
 var RETRYABLE_STATUSES = /* @__PURE__ */ new Set([408, 429, 500, 502, 503, 504]);
@@ -122,6 +122,10 @@ var HttpClient = class {
   /** Convenience POST */
   post(path, body) {
     return this.request("POST", path, { body });
+  }
+  /** Convenience PUT */
+  put(path, body) {
+    return this.request("PUT", path, { body });
   }
   /** Convenience PATCH */
   patch(path, body) {
@@ -280,7 +284,7 @@ var ResourcesResource = class {
     return this.http.get(`/resources/${id}`);
   }
   /**
-   * Update a resource (partial update).
+   * Update a resource (full update — all fields replaced).
    *
    * @param id - Resource ID
    * @param params - Fields to update
@@ -288,17 +292,20 @@ var ResourcesResource = class {
    *
    * @example
    * const updated = await client.resources.update('res_abc123', {
+   *   slug: 'my-api',
+   *   type: 'api',
    *   price_usdc: 0.25,
-   *   description: 'Updated description',
+   *   fee_model: 'pay_per_call',
    * });
    */
   update(id, params) {
-    return this.http.patch(`/resources/${id}`, params);
+    return this.http.request("PUT", `/resources/${id}`, { body: params });
   }
   /**
-   * Delete a resource by ID.
+   * Delete (deactivate) a resource by ID.
    *
    * @param id - Resource ID
+   * @returns Confirmation message
    *
    * @example
    * await client.resources.delete('res_abc123');
@@ -307,10 +314,25 @@ var ResourcesResource = class {
     return this.http.delete(`/resources/${id}`);
   }
   /**
+   * Activate a resource, making it available to accept payments.
+   *
+   * @param id - Resource ID
+   * @returns Activation result with status and optional next steps
+   *
+   * @example
+   * const result = await client.resources.activate('res_abc123');
+   * if (result.next_step) {
+   *   console.log('Next step:', result.next_step);
+   * }
+   */
+  activate(id) {
+    return this.http.request("PATCH", `/resources/${id}/activate`);
+  }
+  /**
    * Get public information about a resource (no authentication required).
    *
    * @param id - Resource ID
-   * @returns Public resource info
+   * @returns Public resource info including pricing
    *
    * @example
    * const info = await client.resources.getPublic('res_abc123');
@@ -319,6 +341,72 @@ var ResourcesResource = class {
     return this.http.request("GET", `/resources/public/${id}`, {
       skipAuth: true
     });
+  }
+  /**
+   * Get the payment-required payload for a resource.
+   * Used for initiating the payment flow.
+   *
+   * @param id - Resource ID
+   * @returns Payment required payload
+   *
+   * @example
+   * const payload = await client.resources.getPaymentRequired('res_abc123');
+   */
+  getPaymentRequired(id) {
+    return this.http.get(`/payment-required/${id}`);
+  }
+  // ─── Quota ──────────────────────────────────────────────────────────────────
+  /**
+   * Set purchase and call quotas for a resource.
+   *
+   * @param id - Resource ID
+   * @param params - Quota limits per wallet
+   * @returns The updated quota configuration
+   *
+   * @example
+   * await client.resources.setQuota('res_abc123', {
+   *   max_purchases_per_wallet: 3,
+   *   max_calls_per_day_per_wallet: 100,
+   * });
+   */
+  setQuota(id, params) {
+    return this.http.request("PUT", `/resources/${id}/quota`, { body: params });
+  }
+  /**
+   * Get the current quota configuration for a resource.
+   *
+   * @param id - Resource ID
+   * @returns Current quota configuration
+   *
+   * @example
+   * const quota = await client.resources.getQuota('res_abc123');
+   */
+  getQuota(id) {
+    return this.http.get(`/resources/${id}/quota`);
+  }
+  /**
+   * Remove all quota limits from a resource.
+   *
+   * @param id - Resource ID
+   *
+   * @example
+   * await client.resources.deleteQuota('res_abc123');
+   */
+  deleteQuota(id) {
+    return this.http.delete(`/resources/${id}/quota`);
+  }
+  /**
+   * Get the webhook signing secret for a resource.
+   * Use this to verify incoming webhook payloads.
+   *
+   * @param id - Resource ID
+   * @returns The webhook secret
+   *
+   * @example
+   * const { webhook_secret } = await client.resources.getWebhookSecret('res_abc123');
+   */
+  getWebhookSecret(id) {
+    return this.http.get(`/resources/${id}/webhook-secret`);
   }
 };
 
@@ -455,14 +543,42 @@ var PlansResource = class {
    *
    * @example
    * const plan = await client.plans.create('res_abc123', {
-   *   name: 'Monthly',
+   *   name: 'monthly',
    *   price_usdc: 9.99,
+   *   fee_model: 'subscription',
    *   duration_seconds: 2592000, // 30 days
-   *   active: true,
    * });
    */
   create(resourceId, params) {
     return this.http.post(`/resources/${resourceId}/plans`, params);
+  }
+  /**
+   * Update an existing plan by name.
+   *
+   * @param resourceId - The resource ID
+   * @param planName - The plan name identifier
+   * @param params - Fields to update
+   * @returns The updated plan
+   *
+   * @example
+   * await client.plans.update('res_abc123', 'monthly', { price_usdc: 12.99 });
+   */
+  update(resourceId, planName, params) {
+    return this.http.request("PUT", `/resources/${resourceId}/plans/${planName}`, {
+      body: params
+    });
+  }
+  /**
+   * Delete a plan by name.
+   *
+   * @param resourceId - The resource ID
+   * @param planName - The plan name identifier
+   *
+   * @example
+   * await client.plans.delete('res_abc123', 'monthly');
+   */
+  delete(resourceId, planName) {
+    return this.http.delete(`/resources/${resourceId}/plans/${planName}`);
   }
 };
 
@@ -472,7 +588,7 @@ var SubscriptionsResource = class {
     this.http = http;
   }
   /**
-   * List all active and past subscriptions.
+   * List all active and past subscriptions for the authenticated vendor.
    *
    * @returns Array of subscription records
    *
@@ -483,31 +599,40 @@ var SubscriptionsResource = class {
     return this.http.get("/subscriptions");
   }
   /**
-   * Create a subscription approval for a resource.
+   * Approve and activate a subscription using the payer's signed authorization.
    *
-   * @param params - Subscription details
+   * @param params - Subscription approval details including signed authorization
    * @returns The created subscription record
    *
    * @example
-   * const sub = await client.subscriptions.create({
+   * const sub = await client.subscriptions.approve({
    *   resource_id: 'res_abc123',
    *   payer_wallet: '0xPayerWalletAddress',
-   *   plan_id: 'plan_monthly',
+   *   max_renewals: 12,
+   *   chain: 'solana',
+   *   signed_approval: '<signature>',
+   *   delegate_token_account: '<account>',
+   *   signed_at: new Date().toISOString(),
+   *   plan: 'monthly',
    * });
    */
-  create(params) {
-    return this.http.post("/subscriptions", params);
+  approve(params) {
+    return this.http.post("/subscriptions/approve", params);
   }
   /**
-   * Cancel a subscription by ID.
+   * Cancel an active subscription using the payer's signed cancellation message.
    *
-   * @param id - Subscription ID
+   * @param params - Cancellation details including payer wallet and signed message
    *
    * @example
-   * await client.subscriptions.cancel('sub_abc123');
+   * await client.subscriptions.cancel({
+   *   resource_id: 'res_abc123',
+   *   payer_wallet: '0xPayerWalletAddress',
+   *   signed_message: '<signature>',
+   * });
    */
-  cancel(id) {
-    return this.http.delete(`/subscriptions/${id}`);
+  cancel(params) {
+    return this.http.post("/subscriptions/cancel", params);
   }
 };
 
@@ -550,6 +675,24 @@ var AnalyticsResource = class {
 var VendorResource = class {
   constructor(http) {
     this.http = http;
+  }
+  /**
+   * Register a new vendor with a signed wallet message.
+   * Use this after `auth.register` to complete onboarding and receive an API key.
+   *
+   * @param params - Wallet address, nonce, and signed message
+   * @returns Vendor ID, API key, and optional next onboarding step
+   *
+   * @example
+   * const result = await client.vendor.register({
+   *   wallet_address: '0xYourWalletAddress',
+   *   nonce: 'random-nonce-string',
+   *   signed_message: '0xSignedMessage',
+   * });
+   * console.log('API Key:', result.api_key);
+   */
+  register(params) {
+    return this.http.post("/vendors/register", params);
   }
   /**
    * Get the authenticated vendor's profile.
